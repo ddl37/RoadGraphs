@@ -78,8 +78,9 @@ class RoadGraph:
 
                 EDGE_METADATA[(source_id, target_id)] = (float(length_meters), street_type, int(max_speed_km), int(is_bidirectional))
 
-                incident_edges_to[source_id].append((source_id, target_id))
                 incident_edges_to[target_id].append((source_id, target_id))
+                if int(is_bidirectional):
+                    incident_edges_to[source_id].append((source_id, target_id))
 
         # an edge is nice if both its endpoints have degree 2
         # forming equivalence classes of nice, adjacent edges that represent the same contiguous "segment" of road
