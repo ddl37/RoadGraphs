@@ -12,13 +12,21 @@ from itertools import chain, dropwhile, islice as take
 from toolz import compose
 from collections import defaultdict
 
+import networkx
+import json
+import time
+
 # rimg.py == OsmToRoadGraph/examples/pycgr-to-png/pycgr-to-png.py
 # from rimg import draw_graph, Node, Edge
 
 # Options
 
-REDUCE_ROADS = False
+REDUCE_ROADS = True
 OFFSET = 1
+
+
+class IgnoreEdgeComponent(Exception):
+    pass
 
 
 def count(it):
@@ -34,7 +42,10 @@ def start_endpoint(component):
     chain_nodes = list(chain(*component))
     chain_count = count(chain_nodes)
     chain_count_count = count(chain_count.values())
-    assert chain_count_count[1] == 2 and 2 * chain_count_count[2] == len(chain_nodes) - 2, "Edge loop"
+    if not (chain_count_count[1] == 2 and 2 * chain_count_count[2] == len(chain_nodes) - 2):
+        assert chain_count_count[1] == 0 and 2 * chain_count_count[2] == len(chain_nodes)
+        raise IgnoreEdgeComponent()
+
     post_yield = []
     for n, c in chain_count.items():
         if c == 1:
@@ -44,10 +55,19 @@ def start_endpoint(component):
                 post_yield.append(n)
     yield from post_yield
 
+def filter_edge_map(f, it):
+    for i in it:
+        try:
+            yield f(i)
+        except IgnoreEdgeComponent:
+            continue
 
 class RoadGraph:
     def __init__(self, nodes, edges, components):
         self.nodes, self.edges, self.components = nodes, edges, components
+
+    def __repr__(self):
+        return f"RoadGraph with {len(self.nodes)} vertices and {len(self.edges)} edges"
 
     @staticmethod
     def from_file(path):
@@ -79,8 +99,8 @@ class RoadGraph:
                 EDGE_METADATA[(source_id, target_id)] = (float(length_meters), street_type, int(max_speed_km), int(is_bidirectional))
 
                 incident_edges_to[target_id].append((source_id, target_id))
-                if int(is_bidirectional):
-                    incident_edges_to[source_id].append((source_id, target_id))
+                # if int(is_bidirectional):
+                incident_edges_to[source_id].append((source_id, target_id))
 
         # an edge is nice if both its endpoints have degree 2
         # forming equivalence classes of nice, adjacent edges that represent the same contiguous "segment" of road
@@ -91,13 +111,19 @@ class RoadGraph:
             # each each should appear exactly once
             assert (target_id, source_id) not in EDGE_METADATA.keys()
 
-            if all(map(is_nice_edge, incident_edges_to[source_id])):
-                assert len(incident_edges_to[source_id]) == 2
+            if len(incident_edges_to[source_id]) == 2:
                 EDGE_COMPONENTS.union(*incident_edges_to[source_id])
 
-            if all(map(is_nice_edge, incident_edges_to[target_id])):
-                assert len(incident_edges_to[target_id]) == 2
+            if len(incident_edges_to[target_id]) == 2:
                 EDGE_COMPONENTS.union(*incident_edges_to[target_id])
+
+            # if all(map(is_nice_edge, incident_edges_to[source_id])):
+            #     assert len(incident_edges_to[source_id]) == 2
+            #     EDGE_COMPONENTS.union(*incident_edges_to[source_id])
+            #
+            # if all(map(is_nice_edge, incident_edges_to[target_id])):
+            #     assert len(incident_edges_to[target_id]) == 2
+            #     EDGE_COMPONENTS.union(*incident_edges_to[target_id])
 
         return RoadGraph(NODE_METADATA, EDGE_METADATA, list(EDGE_COMPONENTS.itersets()))
 
@@ -140,13 +166,15 @@ class RoadGraph:
         return (sum(map(self.length, original_edges)), *self.edges[original_edges[0]][1:3], int(direction))
 
     def flatten(self):
-        new_edges = dict(map(self.flatten_component, self.components))
+        new_edges = dict(filter_edge_map(self.flatten_component, self.components))
         nodes = set(chain(*new_edges.keys()))
         new_nodes = dict(filter(lambda n: n[0] in nodes, self.nodes.items()))
+        return RoadGraph(new_nodes, new_edges, None)
 
+    def relabel_contiguous(self, offset):
         # very inefficient code to reassign node id's starting from 0 (or optionally 1, for Matlab and Julia users)
-        node_id_map = dict(map(compose(tuple, reversed), enumerate(new_nodes.keys())))
-        return RoadGraph({node_id_map[k] + OFFSET: v for k, v in new_nodes.items()}, {(node_id_map[u] + OFFSET, node_id_map[v] + OFFSET): value for (u, v), value in new_edges.items()}, None)
+        node_id_map = dict(map(compose(tuple, reversed), enumerate(self.nodes.keys())))
+        return RoadGraph({node_id_map[k] + OFFSET: v for k, v in self.nodes.items()}, {(node_id_map[u] + OFFSET, node_id_map[v] + OFFSET): value for (u, v), value in self.edges.items()}, None)
 
     def draw(self):
         draw_graph(
@@ -175,35 +203,41 @@ class RoadGraph:
             #     print(self.location(i))
             print(" ".join(map(str, INCIDENCE[i])))
 
+    def networkx_export(self, file):
+        G = networkx.DiGraph()
+
+        for n, (lat, long) in self.nodes.items():
+            G.add_node(n, latitude=lat, longitude=long)
+
+        # TODO: road names as metadata?
+        for (u, v), (length, street_type, max_speed, direction) in self.edges.items():
+            G.add_edge(u, v, length = length, street_type = street_type)
+            if direction:
+                G.add_edge(v, u, length=length, street_type=street_type)
+
+        # H = G.to_undirected(reciprocal=False)
+        # st = time.time()
+        # cycles = [*networkx.algorithms.simple_cycles(G)]
+        # print(len(cycles))
+        # cycle_basis = networkx.algorithms.cycle_basis(H)
+        # print(len(cycle_basis))
+        # print(time.time() - st)
+        # breakpoint()
+
+        G_json = networkx.readwrite.node_link_data(G, {"link": "edges", "source": "from", "target": "to"})
+        with open(file, "w") as f:
+            json.dump(G_json, f)
+
 
 # put the path to your .pycgr file here
 PATH = "Maps/Auckland.pycgr"
 
-gr = RoadGraph.from_file(PATH)
-gr_flat = gr.flatten()
-gr_flat.adjacency_list()
+gr = RoadGraph.from_file(PATH).flatten().relabel_contiguous(1)
+
+# gr_flat.adjacency_list()
+gr.networkx_export("graph.json")
 
 # requires file from OsmToRoadGraph repository
-# gr_flat.draw()
+# gr.draw()
 
-# breakpoint()
-
-# print(len(gr_flat.nodes))
-# print(len(gr_flat.edges))
-
-"""
-minspeed: 5km/h
-maxspeed: 120km/h
-"""
-
-"""
-Merged, all road types:
-187723 nodes
-207770 edge components
-"""
-
-"""
-Merged, reduced:
-24472 nodes
-28426 edge components
-"""
+print(gr)
