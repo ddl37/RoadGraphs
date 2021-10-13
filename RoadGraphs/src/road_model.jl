@@ -10,22 +10,26 @@ struct ModelParams
     lambda
     sensor_cap_ratio
     force_sensor_bidirectional::Bool
+    junctions::Bool
     capacity_classes::Dict{String, Real}
+
+    # Sensors can be forced on, off, or left arbitrary (not in Dict)
+    # fixed_sensors::Dict{Tuple{Int, Int}, Bool}
 end
 
 struct SolveParams
     time_limit
     # TODO
-    constraint_types
-    # Sensors can be forced on, off, or left arbitrary (not in Dict)
-    fixed_sensors::Dict{Tuple{Int, Int}, Bool}
+    indicator_mode
+    opt_attributes
 end
 
 # Default parameters
-ModelParams(; lambda = 1) = ModelParams(
+ModelParams(; lambda = 1, bidir = false, junctions = false) = ModelParams(
     lambda, 
     1.0, 
-    false, 
+    bidir, 
+    junctions,
     Dict(
         "motorway"  => 500, 
         "trunk"     => 400, 
@@ -35,7 +39,7 @@ ModelParams(; lambda = 1) = ModelParams(
         "other"     => 50
     ))
 
-SolveParams(; time_limit = 60) = SolveParams(time_limit, nothing, Dict())
+SolveParams(; time_limit = 60, indicator_mode = false, opt_attributes = Dict("MIPFocus" => 3)) = SolveParams(time_limit, indicator_mode, opt_attributes)
 
 export ModelParams, SolveParams
 
@@ -54,8 +58,12 @@ include("road_constraints.jl")
 function RoadModel(G, MP::ModelParams, SP::SolveParams)::RoadModel
     # TODO: init errors if global const
     GRB_ENV = Gurobi.Env()
-    m = BilevelModel(() -> Gurobi.Optimizer(GRB_ENV), mode = BilevelJuMP.StrongDualityMode(1e-5))
+    mode = SP.indicator_mode ? BilevelJuMP.IndicatorMode() : BilevelJuMP.StrongDualityMode(1e-5)
+    m = BilevelModel(() -> Gurobi.Optimizer(GRB_ENV), mode = mode)
     set_optimizer_attribute(m, "TimeLimit", SP.time_limit)
+    for (k, v) in pairs(SP.opt_attributes)
+        set_optimizer_attribute(m, k, v)
+    end
 
     # clone the graph, as it will be mutated
     model_G = deepcopy(G)
@@ -85,10 +93,19 @@ function setup!(M::RoadModel)
     edge_prop_map(prop) = edge_prop_triples(M.G) .|> ((_, _, p),) -> p[prop]
 
     # Various constraint passes
-    cs_conserve_flow!(Lower(M.m), M)
-    cs_inflow!(Lower(M.m), M)
+
+    # Mutually exclusive ways to prevent flow looping on 2-cycles
+    if M.MP.junctions
+        cs_junction!(Lower(M.m), M)
+    else
+        cs_conserve_flow!(Lower(M.m), M)
+        cs_inflow!(Lower(M.m), M)
+    end
     cs_sensor!(Lower(M.m), M)
-    cs_anticycle_nonlocal!(Lower(M.m), M)
+
+    # Optional: Not implemented
+    # cs_anticycle_local!(Lower(M.m), M)
+    # cs_anticycle_nonlocal!(Lower(M.m), M)
 
     # Objectives
     num_sensors = sum(edge_prop_map(:sensor_var))
@@ -101,13 +118,18 @@ end
 
 """
 Outputs sensor placements and flows as edge properties in model graph `M.G`.
+
+Will throw error if solver fails to find a solution (seems to be picky about which parameters it likes)
 """
 function solve!(M::RoadModel)
     optimize!(M.m)
 
     for (u, v, p) in edge_prop_triples(M.G)
         set_prop!(M.G, u, v, :sensor, value(p[:sensor_var]) ≈ 1)
-        set_prop!(M.G, u, v, :flow, value(p[:flow_var]))
+        f = value(p[:flow_var])
+        # Numerical errors...
+        @assert f > -1e-5 "Got negative flow: $(f)"
+        set_prop!(M.G, u, v, :flow, max(0, f))
     end
 
     termination_status(M.m)
@@ -145,7 +167,7 @@ end
 """
 Draws graph as SVG file using the outputs from `solve!`
 """
-function draw(M::RoadModel, svg_name = "road_sensors.svg")
+function draw!(M::RoadModel, svg_name = "road_sensors.svg")
     # Compute latitude and longitude bounding box for plot
     lats = (1:length(vertices(M.G))) .|> i -> get_prop(M.G, i, :latitude)
     longs = (1:length(vertices(M.G))) .|> i -> get_prop(M.G, i, :longitude)
@@ -168,17 +190,11 @@ function draw(M::RoadModel, svg_name = "road_sensors.svg")
     p
 end
 
-function save!(M::RoadModel, name="")
-    # Not a particularly good way to serialise model - ids depends on latitude/longitude bounding box
-    if !isempty(name)
-        name = "-$(name)"
-    end
-
-    file_prefix = Dates.format(now(), Dates.ISODateTimeFormat)
+"""
+Converts result of a successful model solve into JSON
+"""
+function save_as_json(M::RoadModel)
     logs = Dict()
-    logs["model_params"] = JSON.json(M.MP)
-    logs["solve_params"] = JSON.json(M.SP)
-
     # JSON does not have tuples (hashable), so a Dict for edges won't work
     repr_edge((src, dst, prop_dict),) = let
         [(src, dst), Dict(
@@ -186,18 +202,56 @@ function save!(M::RoadModel, name="")
             "flow" => prop_dict[:flow],
         )]
     end
+    # Not a particularly good way to serialise model - ids depends on latitude/longitude bounding box
     logs["edges"] = collect(It.map(repr_edge, edge_prop_triples(M.G)))
-
-    mkpath("out")
-    open("out/$(file_prefix)$(name).json", "w") do io
-        write(io, JSON.json(logs))
-    end
-
-    draw(M, "out/$(file_prefix)$(name).svg")
+    logs["objective"] = objective_value(M.m)
+    logs
 end
 
 function load(path)
 
 end
 
-export RoadModel, setup!, solve!, draw, save!, load
+"""
+Takes a graph and parameters, runs the model and dumps output as JSON in /out
+"""
+function run_model(G, MP::ModelParams, SP::SolveParams, name="")
+    file_prefix = Dates.format(now(), Dates.ISODateTimeFormat)
+    if !isempty(name)
+        name = "-$(name)"
+    end
+
+    # JSON at the end
+    logs = Dict()
+    logs["model_params"] = MP
+    logs["solve_params"] = SP
+
+    # Record Gurobi solver output
+    old_stdout = stdout    
+    stdout_rd, stdout_wr = redirect_stdout()
+    let
+        M = RoadModel(G, MP, SP)
+        setup!(M)
+        try
+            solve!(M)
+            draw!(M, "out/$(file_prefix)$(name).svg")
+            merge!(logs, save_as_json(M))
+        catch e
+            println("ERROR: $(e)")
+            # save failure report to JSON as merge! in try block did not happen
+            name = "-FAILED$(name)"
+            logs["exception"] = "$(e)"
+        end
+        Base.Libc.flush_cstdio()
+    end
+    logs["stdout"] = String(readavailable(stdout_rd))
+    redirect_stdout(old_stdout)
+
+    # Dump Dict to file
+    mkpath("out")
+    open("out/$(file_prefix)$(name).json", "w") do io
+        write(io, JSON.json(logs, 4))
+    end
+end
+
+export RoadModel, setup!, solve!, draw!, save_as_json, run_model, load

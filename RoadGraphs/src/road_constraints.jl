@@ -11,7 +11,6 @@ function cs_conserve_flow!(m, M::RoadModel)
 		if length(Set(all_neighbors(G, v))) <= 1
 			continue
 		end
-        # additional conditions?
 		
 		expr = 0
 		for i in inneighbors(G, v)
@@ -50,8 +49,39 @@ function cs_inflow!(m, M::RoadModel)
 	end
 end
 
+"""
+Introduces additional variables for which direction flow takes at each junction. Can be used to model allowed turning directions
+"""
 function cs_junction!(m, M::RoadModel)
+	G = M.G
+	for v in vertices(G)
+		if length(outneighbors(G, v)) == 0 || length(inneighbors(G, v)) == 0
+			continue
+		end
+		
+		out_exprs = Dict(ov => -flow_var(G, v, ov) for ov in outneighbors(G, v))
+		for iv in inneighbors(G, v)
+			in_expr = -flow_var(G, iv, v)
+			for ov in outneighbors(G, v)
+				if ov == iv
+					continue
+				end
 
+				# declare anonymous junction variable
+				iv_ov_var = @variable(m)
+				set_lower_bound(iv_ov_var, 0)
+				set_upper_bound(iv_ov_var, 500) # maybe upper bound speeds up solver?
+
+				out_exprs[ov] += iv_ov_var
+				in_expr += iv_ov_var
+			end
+			push!(M.constraints, @constraint(m, in_expr == 0))
+		end
+
+		for oc in values(out_exprs)
+			push!(M.constraints, @constraint(m, oc == 0))
+		end
+	end
 end
 
 """
@@ -62,10 +92,10 @@ function cs_anticycle_local!(m, M::RoadModel)
 end
 
 """
-Form connected components of "bad/small" cycles and bound containing edges by the net flow entering the component
+Form connected components of "bad/small" cycles and bound all contained edges by the net flow entering the component
 """
 function cs_anticycle_nonlocal!(m, M::RoadModel)
-    # TODO: Construct dual/incidence graph on basic cycles
+	# Not implemented
 end
 
 function cs_sensor!(m, M::RoadModel)

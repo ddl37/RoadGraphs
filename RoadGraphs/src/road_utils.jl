@@ -41,69 +41,73 @@ function read_graph(filename, bbox_ll = (-Inf, -Inf), bbox_ur = (Inf, Inf))::Met
 	G
 end
 
-"Distance between lat/long pair in metres ~ from StackOverflow"
-function geo_distance(lat1, lon1, lat2, lon2)
-    p = π/180
-    a = 0.5 - cos((lat2-lat1)*p)/2 + cos(lat1*p) * cos(lat2*p) * (1-cos((lon2-lon1)*p))/2
-    return 12742 * asin(sqrt(a)) * 1000
-end
+# Gave up on trying to find the area of a cycle. I hate spherical geometry.
 
-function triangle_area(lat_long_pairs)
-    @assert length(lat_long_pairs) == 3
-    
-    d(u, v) = geo_distance(lat_long_pairs[u]..., lat_long_pairs[v]...)
-    
-    # Heron's formula
-    a, b, c = d(1, 2), d(2, 3), d(3, 1)
-    @assert a >= 0 lat_long_pairs
-    @assert b >= 0 lat_long_pairs
-    @assert c >= 0 lat_long_pairs
-    s = (a + b + c) / 2
-    x = s * (s - a) * (s - b) * (s - c)
-    @assert x >= 0
-    return sqrt(x)
-end
+# "Distance between lat/long pair in metres ~ from StackOverflow"
+# function geo_distance(lat1, lon1, lat2, lon2)
+#     p = π/180
+#     a = 0.5 - cos((lat2-lat1)*p)/2 + cos(lat1*p) * cos(lat2*p) * (1-cos((lon2-lon1)*p))/2
+#     return 12742 * asin(sqrt(a)) * 1000
+# end
 
-mean(x) = sum(x) / length(x)
+# function triangle_area(lat_long_pairs)
+#     @assert length(lat_long_pairs) == 3
+    
+#     d(u, v) = geo_distance(lat_long_pairs[u]..., lat_long_pairs[v]...)
+    
+#     # Heron's formula
+#     a, b, c = d(1, 2), d(2, 3), d(3, 1)
+#     @assert a >= 0 lat_long_pairs
+#     @assert b >= 0 lat_long_pairs
+#     @assert c >= 0 lat_long_pairs
+#     s = (a + b + c) / 2
+#     x = s * (s - a) * (s - b) * (s - c)
+#     @assert x >= 0
+#     return sqrt(x)
+# end
+
+# mean(x) = sum(x) / length(x)
+
+# """
+# Crude approximation to the area (m^2) enclosed by a cycle (does not take into account spherical geometry of Earth like `areaquad` in Matlab)
+
+# Note: Assumes vertices not repeated
+# """
+# function cycle_area(G, cycle)
+#     # Replace vertices by their latitude and longitude
+#     geo_cycle = collect(It.map(i -> (get_prop(G, i, :latitude), get_prop(G, i, :longitude)), cycle))
+
+#     # Probably not an "actual" midpoint in the case of weird cycles, but good enough
+#     midpoint = (mean(first.(geo_cycle)), mean(last.(geo_cycle)))
+
+#     idxmod = i -> mod1(i, length(cycle))
+    
+#     # TODO: Formula broken and does not work
+#     sum(triangle_area([geo_cycle[idxmod(i)], geo_cycle[idxmod(i + 1)], midpoint]) for i in 1:length(cycle))
+# end
+
 
 """
-Crude approximation to the area (m^2) enclosed by a cycle (does not take into account spherical geometry of Earth like `areaquad` in Matlab)
-
-Note: Assumes vertices not repeated
-"""
-function cycle_area(G, cycle)
-    # Replace vertices by their latitude and longitude
-    geo_cycle = collect(It.map(i -> (get_prop(G, i, :latitude), get_prop(G, i, :longitude)), cycle))
-
-    # Probably not an "actual" midpoint in the case of weird cycles, but good enough
-    midpoint = (mean(first.(geo_cycle)), mean(last.(geo_cycle)))
-
-    idxmod = i -> mod1(i, length(cycle))
-    
-    # TODO: Formula broken and does not work
-    sum(triangle_area([geo_cycle[idxmod(i)], geo_cycle[idxmod(i + 1)], midpoint]) for i in 1:length(cycle))
-end
-
-"""
-Returns a list of lists of directed basic cycles (grouped by their corresponding undirected cycle - so 0/1/2 per group), along with their area and total length
+Returns a list of lists of directed basic cycles (grouped by their corresponding undirected cycle - so 0/1/2 per group) as tuples (vertex_list, area, length)
 
 Use `It.flatten(basic_cycles(G))` if grouping is irrelevant
 """
 function basic_cycles(G)
-end
-
-# @resumable 
-function basic_cycles(G)
     # Convert `G` to an undirected graph (vertices *should* stay the same)
-    # cycle_basis requires G <: AbstractSimpleGraph but MetaGraph, MetaDiGraph <: AbstractMetaGraph
+    # Can't convert directly because cycle_basis requires G <: AbstractSimpleGraph but MetaGraph, MetaDiGraph <: AbstractMetaGraph
     out = []
 
     UG = Graph(MetaGraph(G))
     for bs in cycle_basis(UG)
-        # Note: Cannot use idxmod(i) = ... syntax
-        idxmod = i -> mod1(i, length(bs))
+        if length(bs) <= 2
+            println("Self-cycle: $(bs); Ignoring...")
+            continue
+        end
+        
+        idx = k -> bs[mod1(k, length(bs))]
+        
         ℓ = (i, j) -> let 
-            ix, jx = bs[idxmod(i)], bs[idxmod(j)]
+            ix, jx = idx(i), idx(j)
             if has_edge(G, ix, jx)
                 get_prop(G, ix, jx, :length)
             else
@@ -111,21 +115,20 @@ function basic_cycles(G)
             end
         end
 
-        area = cycle_area(G, bs)
+        # area = cycle_area(G, bs)
+        area = 0
         circ = sum(ℓ(i, i + 1) for i in 1:length(bs))
-        # could probably abstract into cycle iterator
-        
+
         cs = []
-        if all(has_edge(G, idxmod(i), idxmod(i + 1)) for i in 1:length(bs))
+        if all(has_edge(G, idx(i), idx(i + 1)) for i in 1:length(bs))
             push!(cs, (bs, area, circ))
         end
-        if all(has_edge(G, idxmod(i), idxmod(i - 1)) for i in 1:length(bs))
+        if all(has_edge(G, idx(i), idx(i - 1)) for i in 1:length(bs))
             push!(cs, (reverse(bs), area, circ))
         end
-        # @yield cs
-        push!(out, cs)
+        isempty(cs) || push!(out, cs)
     end
-    return out
+    out
 end
 
 """
@@ -149,4 +152,5 @@ end
     end
 end
 
-export edge_pairs, edge_prop_triples, symbolify, read_graph, geo_distance, triangle_area, cycle_area, basic_cycles, zipv
+export edge_pairs, edge_prop_triples, symbolify, read_graph, basic_cycles, zipv
+# export edge_pairs, edge_prop_triples, symbolify, read_graph, geo_distance, triangle_area, cycle_area, basic_cycles, zipv
