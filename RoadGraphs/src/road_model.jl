@@ -231,8 +231,35 @@ function save_as_json(M::RoadModel)
     logs
 end
 
-function load(path)
+function load(path, G)
+    logs = JSON.parsefile(path)
 
+    # other parameters ignored for now
+    MP = ModelParams(
+        lambda = logs["model_params"]["lambda"],
+        bidir = logs["model_params"]["force_sensor_bidirectional"],
+        junctions = logs["model_params"]["junctions"]
+    )
+
+    # Loading an existing solution so solve should be near-instantaneous
+    SP = SolveParams(
+        time_limit = 10,
+    )
+
+    M = RoadModel(G, MP, SP)
+    setup!(M)
+
+    # fix variables to loaded values
+    for ((u, v), json_edge_props) in logs["edges"]
+        if json_edge_props["sensor"]
+            fix(get_prop(M.G, u, v, :sensor_var), 1, force=true)
+        else
+            fix(get_prop(M.G, u, v, :sensor_var), 0, force=true)
+        end
+    end
+    solve!(M)
+    draw!(M)
+    M
 end
 
 """
