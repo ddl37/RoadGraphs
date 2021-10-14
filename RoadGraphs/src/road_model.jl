@@ -252,7 +252,7 @@ function run_model(G, MP::ModelParams, SP::SolveParams, name=""; draw = true)
     # Record Gurobi solver output
     old_stdout = stdout    
     stdout_rd, stdout_wr = redirect_stdout()
-    let
+    M = let
         M = RoadModel(G, MP, SP)
         setup!(M)
         try
@@ -268,6 +268,7 @@ function run_model(G, MP::ModelParams, SP::SolveParams, name=""; draw = true)
             logs["exception"] = "$(e)"
         end
         Base.Libc.flush_cstdio()
+        M
     end
     logs["stdout"] = String(readavailable(stdout_rd))
     redirect_stdout(old_stdout)
@@ -277,6 +278,9 @@ function run_model(G, MP::ModelParams, SP::SolveParams, name=""; draw = true)
     open("out/$(file_prefix)$(name).json", "w") do io
         write(io, JSON.json(logs, 4))
     end
+
+    # return solved model
+    M
 end
 
 export RoadModel, setup!, solve!, draw!, save_as_json, run_model, load
