@@ -239,7 +239,7 @@ end
 Takes a graph and parameters, runs the model and dumps output as JSON in /out
 """
 function run_model(G, MP::ModelParams, SP::SolveParams, name=""; draw = true)
-    file_prefix = Dates.format(now(), Dates.ISODateTimeFormat)
+    file_prefix = replace(Dates.format(now(), Dates.ISODateTimeFormat), ":" => "-")
     if !isempty(name)
         name = "-$(name)"
     end
