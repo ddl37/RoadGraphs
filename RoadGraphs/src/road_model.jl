@@ -108,8 +108,22 @@ function setup!(M::RoadModel)
     # cs_anticycle_nonlocal!(Lower(M.m), M)
 
     # Objectives
-    num_sensors = sum(edge_prop_map(:sensor_var))
+
+    sensor_map((u, v, p),) = let 
+        # Sensors on both sides of the road should count as "one" sensor in bidirectional mode
+        if M.MP.force_sensor_bidirectional && has_edge(M.G, v, u)
+            p[:sensor_var] * 0.5
+        else
+            p[:sensor_var]
+        end
+    end
+    num_sensors = 0
+    # Type inference failure...
+    for s in sensor_map.(edge_prop_triples(M.G))
+        num_sensors += s
+    end
     weighted_flows = sum(edge_prop_map(:length) .* edge_prop_map(:flow_var)) / 100
+    # try to normalise by "size" of graph
     λ = M.MP.lambda / length(edges(M.G))
 
     @objective(Lower(M.m), Max, weighted_flows)
@@ -195,8 +209,13 @@ Converts result of a successful model solve into JSON
 """
 function save_as_json(M::RoadModel)
     logs = Dict()
+
+    sensor_all = true
+    sensor_none = false
     # JSON does not have tuples (hashable), so a Dict for edges won't work
     repr_edge((src, dst, prop_dict),) = let
+        sensor_all &= prop_dict[:sensor]
+        sensor_none |= prop_dict[:sensor]
         [(src, dst), Dict(
             "sensor" => prop_dict[:sensor],
             "flow" => prop_dict[:flow],
@@ -205,6 +224,10 @@ function save_as_json(M::RoadModel)
     # Not a particularly good way to serialise model - ids depends on latitude/longitude bounding box
     logs["edges"] = collect(It.map(repr_edge, edge_prop_triples(M.G)))
     logs["objective"] = objective_value(M.m)
+    
+    logs["trivial_all"] = sensor_all
+    logs["trivial_none"] = !sensor_none
+
     logs
 end
 
@@ -215,7 +238,7 @@ end
 """
 Takes a graph and parameters, runs the model and dumps output as JSON in /out
 """
-function run_model(G, MP::ModelParams, SP::SolveParams, name="")
+function run_model(G, MP::ModelParams, SP::SolveParams, name=""; draw = true)
     file_prefix = Dates.format(now(), Dates.ISODateTimeFormat)
     if !isempty(name)
         name = "-$(name)"
@@ -234,7 +257,9 @@ function run_model(G, MP::ModelParams, SP::SolveParams, name="")
         setup!(M)
         try
             solve!(M)
-            draw!(M, "out/$(file_prefix)$(name).svg")
+            if draw
+                draw!(M, "out/$(file_prefix)$(name).svg")
+            end
             merge!(logs, save_as_json(M))
         catch e
             println("ERROR: $(e)")

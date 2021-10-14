@@ -70,7 +70,7 @@ function cs_junction!(m, M::RoadModel)
 				# declare anonymous junction variable
 				iv_ov_var = @variable(m)
 				set_lower_bound(iv_ov_var, 0)
-				set_upper_bound(iv_ov_var, 500) # maybe upper bound speeds up solver?
+				# set_upper_bound(iv_ov_var, 500) # maybe upper bound speeds up solver? (nope)
 
 				out_exprs[ov] += iv_ov_var
 				in_expr += iv_ov_var
@@ -104,7 +104,18 @@ function cs_sensor!(m, M::RoadModel)
     end
 
     if M.MP.force_sensor_bidirectional
-        # TODO
+		for (u, v, prop) in edge_prop_triples(M.G)
+			# I'm not sure why there are edge self-loops. Will fix when I have time
+			if u == v
+				println("Edge self-loop")
+				continue
+			end
+
+			# sort edge components so that constraint is only added once
+			if has_edge(M.G, v, u) && u < v
+				push!(M.constraints, @constraint(m, prop[:sensor_var] == get_prop(M.G, v, u, :sensor_var)))
+			end
+		end
     end
 end
 

@@ -33,6 +33,9 @@ function read_graph(filename, bbox_ll = (-Inf, -Inf), bbox_ur = (Inf, Inf))::Met
 		if g_src_id < 0 || g_dst_id < 0
 			continue
 		end
+        if g_src_id == g_dst_id
+            continue
+        end
 		
 		@assert add_edge!(G, g_src_id, g_dst_id)
 		@assert set_props!(G, g_src_id, g_dst_id, symbolify(e))
