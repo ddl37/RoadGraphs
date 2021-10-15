@@ -5,6 +5,7 @@ using Gadfly
 using LightGraphs, MetaGraphs
 using JuMP, BilevelJuMP
 using Gurobi
+using DataFrames
 
 struct ModelParams
     lambda
@@ -122,6 +123,8 @@ function setup!(M::RoadModel)
     for s in sensor_map.(edge_prop_triples(M.G))
         num_sensors += s
     end
+    M.data[:num_sensors_var] = num_sensors
+
     weighted_flows = sum(edge_prop_map(:length) .* edge_prop_map(:flow_var)) / 100
     # try to normalise by "size" of graph
     λ = M.MP.lambda / length(edges(M.G))
@@ -186,6 +189,10 @@ function draw!(M::RoadModel, svg_name = "road_sensors.svg")
     lats = (1:length(vertices(M.G))) .|> i -> get_prop(M.G, i, :latitude)
     longs = (1:length(vertices(M.G))) .|> i -> get_prop(M.G, i, :longitude)
 
+    ns = (Int ∘ round ∘ value)(M.data[:num_sensors_var])
+    d = collect(zipv(position_edges(M.G)))
+    df = DataFrame(Dict(:x => d[1], :y => d[2], :xend => d[3], :yend => d[4], :Flow => d[5]))
+
     p = plot(
 		# plot sensors on top layer as points instead of lines
 		layer(
@@ -193,12 +200,20 @@ function draw!(M::RoadModel, svg_name = "road_sensors.svg")
 			zip([:x, :y], zipv(position_sensors(M.G)))...
 		),
 		layer(
-			Geom.segment(arrow=true, filled=true);
-			zip([:x, :y, :xend, :yend, :color], zipv(position_edges(M.G)))...
+            df,
+            x = :x,
+            y = :y,
+            xend = :xend,
+            yend = :yend,
+            color = :Flow,
+			Geom.segment(arrow=true, filled=true)
 		),
 		Scale.x_continuous(minvalue=minimum(lats), maxvalue=maximum(lats)), 
 		Scale.y_continuous(minvalue=minimum(longs), maxvalue=maximum(longs)),
-		Theme(line_width = 0.1mm)
+		Theme(line_width = 0.1mm),
+        Guide.xlabel("Latitude"),
+        Guide.ylabel("Longitude"),
+        Guide.title("λ = $(M.MP.lambda) ($(ns) sensors)"),
 	)
     Gadfly.draw(SVGJS(svg_name), p)
     p
