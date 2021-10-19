@@ -280,7 +280,7 @@ end
 """
 Takes a graph and parameters, runs the model and dumps output as JSON in /out
 """
-function run_model(G, MP::ModelParams, SP::SolveParams, name=""; draw = true)
+function run_model(G, MP::ModelParams, SP::SolveParams, name=""; draw = true, add_data = Dict())
     file_prefix = replace(Dates.format(now(), Dates.ISODateTimeFormat), ":" => "-")
     if !isempty(name)
         name = "-$(name)"
@@ -314,6 +314,8 @@ function run_model(G, MP::ModelParams, SP::SolveParams, name=""; draw = true)
     end
     logs["stdout"] = String(readavailable(stdout_rd))
     redirect_stdout(old_stdout)
+
+    merge!(logs, add_data)
 
     # Dump Dict to file
     mkpath("out")
