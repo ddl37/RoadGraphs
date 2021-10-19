@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="worker-src 'self' blob:" />
+    <title>Document</title>
+
+    <link rel="stylesheet" href="app.css">
+    <link rel="stylesheet" href="build/bundle.css">
+</head>
+
+<body>
+
+    <div class="reveal">
+        <div class="slides">
+
+            <section data-markdown id="foo_content">
+                <!-- <script type="text/template" src="./copy.md"></script> -->
+            </section>
+
+            <section data-fullscreen>
+                <canvas id="map"></canvas>
+            </section>
+        </div>
+    </div>
+
+    <script src="FullScreenPlugin.js"></script>
+    <script src="https://unpkg.com/three/build/three.min.js"></script>
+    <!-- <script src="https://unpkg.com/@here/harp.gl/dist/harp.js"></script> -->
+    <script src="harp.js"></script>
+    <script src="build/bundle.js"></script>
+</body>
+
+</html>
