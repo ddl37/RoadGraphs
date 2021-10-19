@@ -22,7 +22,7 @@ let deck = new Reveal(document.querySelector(".reveal"), {
 })
 
 
-fetch("/copy.md").then(response => {
+fetch("copy.md").then(response => {
     response.text().then(text => {
         let slide_content = d3.create("script")
             .attr("type", "text/template")

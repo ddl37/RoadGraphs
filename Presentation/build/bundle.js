@@ -13368,7 +13368,7 @@
     embedded: true,
     plugins: [markdown_esm_default, mathjax3_plugin_default, import_highlight.default, import_notes.default, RevealFullscreen]
   });
-  fetch("/copy.md").then((response) => {
+  fetch("copy.md").then((response) => {
     response.text().then((text) => {
       let slide_content = create_default("script").attr("type", "text/template").text(text);
       select_default2("#foo_content").node().appendChild(slide_content.node());
