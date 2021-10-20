@@ -80,7 +80,7 @@ mapView.addDataSource(vectorTileDataSource);
 // TODO: change stylesheet to show roads better, more contrast
 
 async function load_sensor_flow_data() {
-    const res = await fetch("Maps/sample.geojson");
+    const res = await fetch("Maps/blocked16-v2.geojson");
     const data = await res.json();
     const dataProvider = new harp.GeoJsonDataProvider("sensor-flows", data);
     const geoJsonDataSource = new harp.VectorTileDataSource({
@@ -141,7 +141,7 @@ atmosphere.lightMode = harp.AtmosphereLightMode.LightOverhead;
 
 mapView.mapRenderingManager.bloom = {
     enabled: true,
-    strength: 3.7,
+    strength: 3.2,
     // threshold: 0.83,
     threshold: 0.77,
     radius: 1

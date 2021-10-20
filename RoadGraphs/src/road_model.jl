@@ -119,15 +119,23 @@ function setup!(M::RoadModel)
         end
     end
     num_sensors = 0
-    # Type inference failure...
+    # Type inference failure (empty summation)
     for s in sensor_map.(edge_prop_triples(M.G))
         num_sensors += s
     end
     M.data[:num_sensors_var] = num_sensors
 
-    weighted_flows = sum(edge_prop_map(:length) .* edge_prop_map(:flow_var)) / 100
-    # try to normalise by "size" of graph
-    λ = M.MP.lambda / length(edges(M.G))
+    weighted_flows = 0
+    for wf in edge_prop_map(:length) .* edge_prop_map(:flow_var) / 100
+        weighted_flows += wf
+    end
+    # try to normalise by "size" of graph (problematic when running on disjoint and merging)
+    # correct notion of size is *total length of roads*
+    # undercounts unidirectional roads
+    # average edge length: 262m, make it 300 to account for trivial roads
+    # nE = length(edges(M.G))
+    # λ = M.MP.lambda / (sum(get_prop(M.G, e, :length) for e in edges(M.G)) / 300)
+    λ = M.MP.lambda / 500
 
     @objective(Lower(M.m), Max, weighted_flows)
     @objective(Upper(M.m), Min, num_sensors + λ * weighted_flows)
@@ -221,22 +229,28 @@ end
 
 """
 Converts result of a successful model solve into JSON
+
+BREAKING CHANGE: Now using ids from the original Python graph as identifiers. Incompatible with previously generated .json runs!
 """
 function save_as_json(M::RoadModel)
     logs = Dict()
 
     sensor_all = true
     sensor_none = false
+
+    id(v) = get_prop(M.G, v, :id)
+
     # JSON does not have tuples (hashable), so a Dict for edges won't work
     repr_edge((src, dst, prop_dict),) = let
         sensor_all &= prop_dict[:sensor]
         sensor_none |= prop_dict[:sensor]
-        [(src, dst), Dict(
+
+        [(id(src), id(dst)), Dict(
             "sensor" => prop_dict[:sensor],
             "flow" => prop_dict[:flow],
         )]
     end
-    # Not a particularly good way to serialise model - ids depends on latitude/longitude bounding box
+    # Convert the arbitrary consecutive vertex labellings into original ids
     logs["edges"] = collect(It.map(repr_edge, edge_prop_triples(M.G)))
     logs["objective"] = objective_value(M.m)
     
@@ -258,7 +272,7 @@ function load(path, G; setuponly = false)
 
     # Loading an existing solution so solve should be near-instantaneous
     SP = SolveParams(
-        time_limit = 10,
+        time_limit = 37,
     )
 
     M = RoadModel(G, MP, SP)
@@ -270,10 +284,12 @@ function load(path, G; setuponly = false)
 
     # fix variables to loaded values
     for ((u, v), json_edge_props) in logs["edges"]
+        u_label = G[:id][u]
+        v_label = G[:id][v]
         if json_edge_props["sensor"]
-            fix(get_prop(M.G, u, v, :sensor_var), 1, force=true)
+            fix(get_prop(M.G, u_label, v_label, :sensor_var), 1, force=true)
         else
-            fix(get_prop(M.G, u, v, :sensor_var), 0, force=true)
+            fix(get_prop(M.G, u_label, v_label, :sensor_var), 0, force=true)
         end
     end
     solve!(M)
@@ -289,11 +305,29 @@ function load_blocks(paths, G)
     M = load(first(paths), G, setuponly = true)
     for path in paths
         js = JSON.parsefile(path)
+        # this should cover *all* edges (border handling?)
         for ((u, v), js_edge_props) in js["edges"]
             # Set sensors, assume no overlap, but if there is doesn't really matter
             # edge format must store `id`
+            u_label = G[:id][u]
+            v_label = G[:id][v]
+            if js_edge_props["sensor"]
+                fix(get_prop(M.G, u_label, v_label, :sensor_var), 1, force=true)
+            else
+                fix(get_prop(M.G, u_label, v_label, :sensor_var), 0, force=true)
+            end
         end
     end
+
+    # Some edges may not be covered, or go between regions. Ignore them to make the solution go faster. 
+    for (u, v, p) in edge_prop_triples(M.G)
+        sv = p[:sensor_var]
+        if !is_fixed(sv)
+            fix(sv, 0, force=true)
+        end
+    end
+    solve!(M)
+    M
 end
 
 """
@@ -346,4 +380,4 @@ function run_model(G, MP::ModelParams, SP::SolveParams, name=""; draw = true, ad
     M
 end
 
-export RoadModel, setup!, solve!, draw!, save_as_json, run_model, load
+export RoadModel, setup!, solve!, draw!, save_as_json, run_model, load, load_blocks
