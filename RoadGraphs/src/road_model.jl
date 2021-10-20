@@ -246,7 +246,7 @@ function save_as_json(M::RoadModel)
     logs
 end
 
-function load(path, G)
+function load(path, G; setuponly = false)
     logs = JSON.parsefile(path)
 
     # other parameters ignored for now
@@ -264,6 +264,10 @@ function load(path, G)
     M = RoadModel(G, MP, SP)
     setup!(M)
 
+    if setuponly
+        return M
+    end
+
     # fix variables to loaded values
     for ((u, v), json_edge_props) in logs["edges"]
         if json_edge_props["sensor"]
@@ -273,8 +277,23 @@ function load(path, G)
         end
     end
     solve!(M)
-    draw!(M)
+    # draw!(M)
     M
+end
+
+"""
+Given the *full* graph `G` and paths to JSON output of solves on *blocks* of `G`, merges the sensor placements and solves
+"""
+function load_blocks(paths, G)
+    # Assume parameters of first
+    M = load(first(paths), G, setuponly = true)
+    for path in paths
+        js = JSON.parsefile(path)
+        for ((u, v), js_edge_props) in js["edges"]
+            # Set sensors, assume no overlap, but if there is doesn't really matter
+            # edge format must store `id`
+        end
+    end
 end
 
 """
