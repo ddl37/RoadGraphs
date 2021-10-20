@@ -13383,13 +13383,13 @@
   window.toNZ = () => {
     mapView.lookAt({
       target: new harp.GeoCoordinates(-36.9323, 174.8616),
-      zoomLevel: 14,
-      tilt: 40
+      zoomLevel: 13,
+      tilt: 20
     });
   };
   setTimeout(() => {
     window.toNZ();
-  }, 5e3);
+  }, 1e3);
   var mapControls = new harp.MapControls(mapView);
   var ui2 = new harp.MapControlsUI(mapControls);
   canvas.parentElement.appendChild(ui2.domElement);
@@ -13439,6 +13439,17 @@
     geoJsonDataSource.setTheme(theme);
     mapView.update();
   }
+  var { camera, projection, mapAnchors } = mapView;
+  var updateCallback = () => mapView.update();
+  var atmosphere = new harp.MapViewAtmosphere(mapAnchors, camera, projection, mapView.renderer.capabilities, updateCallback);
+  atmosphere.lightMode = harp.AtmosphereLightMode.LightOverhead;
+  mapView.mapRenderingManager.bloom = {
+    enabled: true,
+    strength: 3.7,
+    threshold: 0.77,
+    radius: 1
+  };
+  mapView.update();
   load_sensor_flow_data().then(console.log).catch(console.error);
 })();
 /*!

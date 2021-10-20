@@ -51,14 +51,14 @@ const mapView = new harp.MapView({
 window.toNZ = () => {
     mapView.lookAt({
         target: new harp.GeoCoordinates(-36.9323, 174.8616),
-        zoomLevel: 14,
-        tilt: 40,
+        zoomLevel: 13,
+        tilt: 20,
     });
 }
 
 setTimeout(() => {
     window.toNZ()
-}, 5000)
+}, 1000)
 
 const mapControls = new harp.MapControls(mapView);
 const ui = new harp.MapControlsUI(mapControls);
@@ -88,6 +88,8 @@ async function load_sensor_flow_data() {
         name: "sensor-flows",
         styleSetName: "geojson",
     });
+
+    // Load sensor data as pre-generated GeoJSON
 
     await mapView.addDataSource(geoJsonDataSource);
     const theme: harp.Theme = {
@@ -125,5 +127,25 @@ async function load_sensor_flow_data() {
     // });
     mapView.update();
 }
+
+const { camera, projection, mapAnchors } = mapView;
+const updateCallback = () => mapView.update();
+const atmosphere = new harp.MapViewAtmosphere(
+    mapAnchors,
+    camera,
+    projection,
+    mapView.renderer.capabilities,
+    updateCallback
+);
+atmosphere.lightMode = harp.AtmosphereLightMode.LightOverhead;
+
+mapView.mapRenderingManager.bloom = {
+    enabled: true,
+    strength: 3.7,
+    // threshold: 0.83,
+    threshold: 0.77,
+    radius: 1
+}
+mapView.update()
 
 load_sensor_flow_data().then(console.log).catch(console.error)
