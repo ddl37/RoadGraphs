@@ -16,13 +16,112 @@
 
     <div class="reveal">
         <div class="slides">
+            <section data-background-color="white">
+                <h1> Intro </h1>
 
-            <section data-markdown id="foo_content">
-                <!-- <script type="text/template" src="./copy.md"></script> -->
+                <aside class="notes">
+                    Note: So now we want to apply this to create a solution on real-world roads (that is, a placement of sensors on edges of the graph) - we decided to use Auckland. 
+                    
+                    Introducing real-world road conditions makes the problem significantly more challenging.
+
+                    Earlier we gave conditions for obtaining *complete* information. However, that may be too many
+                    sensors for NZTA to consider, so we want to scale down the number of sensors while preserving as
+                    much information as possible.
+                </aside>
+            </section>
+
+            <section data-background-color="white">
+                <h3> Preprocessing </h3>
+
+                <div style="display: flex">
+                    <div style="flex: 1">
+                        <img src="auckland.png">
+                        (a) 329816 vertices, 83504 edges
+                    </div>
+                    <div style="flex: 1">
+                        <img src="auckland_reduced.png">
+                        (b) 7744 vertices, 11648 edges
+                    </div>
+                </div>
+
+                <aside class="notes">
+                    Left one is what you get from OpenStreetMaps
+
+                    We use the result on simplification of vertices in a line from earlier, as well as some other techniques (like chuck out useless roads from residential areas)... to transform into right one. 
+
+                    As you can see, significantly fewer edges, 
+                </aside>
+            </section>
+
+            <!-- <section data-markdown id="foo_content">
+            </section> -->
+
+            <section data-markdown="copy.md" data-separator="^\r?\n---\r?\n$" data-separator-vertical="^\n\^\^\^\n$"
+                data-separator-notes="^Note:">
             </section>
 
             <section data-fullscreen>
                 <canvas id="map"></canvas>
+
+                <aside class="notes">
+                    Here, we have an example of sensor placements for the entirety of Auckland -- which is not
+                    particularly optimal due to limitations in available computational power.
+
+                    As in the earlier diagrams, the color of the road indicates the traffic flow in the "worst case"
+                    maximisation scenario.
+
+                    still fairly large amount of uncertainty, basically corresponding to the fact that to obtain
+                    "complete" information requires a very large number of sensors.
+
+                    As you can see, this is a lot of sensors, but the sensor number is configurable. Those additional
+                    configurations aren't displayed, because making the computer generate all these sensor placements
+                    took a very long time.
+
+                    This could be extended into e.g. a tool for NZTA to interactively add sensors and observe the effect
+                    on the entire network of traffic flow.
+                </aside>
+            </section>
+
+            <!-- Conclusion -->
+            <section>
+                <h1> Conclusion </h1>
+            </section>
+
+            <section>
+                <h3> Things we wanted to do </h3>
+
+                <div style="display: flex">
+                    <div style="flex: 1">
+                        <ul>
+                            <li>Prove sub-optimal convergence</li>
+                            <li>Apply perturbation theory</li>
+                            <li>Apply traffic density</li>
+                        </ul>
+                    </div>
+                    <div style="flex: 1">
+                        <img src="img1.png">
+                    </div>
+                </div>
+            </section>
+
+            <section>
+                <h3> Things we wanted to do... </h3>
+
+                <div style="display: flex">
+                    <div style="flex: 1">
+                        <ul>
+                            <li>Add a cost variable with different measuring techniques</li>
+                            <li>Adapt the 2 player game to run an AI-based evolutionary algorithm off of it</li>
+                        </ul>
+                    </div>
+                    <div style="flex: 1">
+                        <img src="img2.png">
+                    </div>
+                </div>
+            </section>
+
+            <section>
+                <h1> Questions? </h1>
             </section>
         </div>
     </div>
