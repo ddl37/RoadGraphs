@@ -21,18 +21,19 @@ let deck = new Reveal(document.querySelector(".reveal"), {
     plugins: [Markdown, RevealMath3, RevealHighlight, RevealNotes, RevealFullscreen]
 })
 
+// fetch("copy.md").then(response => {
+//     response.text().then(text => {
+//         let slide_content = d3.create("script")
+//             .attr("type", "text/template")
+//             .text(text)
 
-fetch("copy.md").then(response => {
-    response.text().then(text => {
-        let slide_content = d3.create("script")
-            .attr("type", "text/template")
-            .text(text)
+//         d3.select("#foo_content").node().appendChild(slide_content.node())
 
-        d3.select("#foo_content").node().appendChild(slide_content.node())
+        
+//     })
+// })
 
-        deck.initialize()
-    })
-})
+deck.initialize()
 
 /// RENDER THE 3D INTERACTIVE MAP
 // import harp from "@here/harp.gl"

@@ -1,24 +1,14 @@
-# Intro
-
-Presentation slides incomplete...
-
-Note: Earlier we gave conditions for obtaining *complete* information. However, that may be too many sensors for NZTA to consider, so we want to scale down the number of sensors while preserving as much information as possible. 
-
----
-
 # The Game
 
 Player 1
 
-- Places some sensors on edges
+- Places some sensors on edges of the road graph
 
 Player 2
 
 - Sends as much traffic through the network as possible, whilst avoiding the sensors that player 1 placed
 
-Note: So now we want to actually construct a solution (that is, a placement of sensors on edges of the graph)
-
-As player 1 you have to consider the **worst-case scenario**
+Note: As player 1 you have to consider the **worst-case scenario**
 
 (so this is kinda a difficult problem)
 
@@ -26,35 +16,35 @@ Start by describing how we turn the problem brief into an optimisation problem
 
 ---
 
-# The model
+### The model
 
-As usual, binary variables for sensors
+For each edge, $(u, v) \in E$:
+- 0/1 binary variable if sensor on it
+- Nonnegative flow $f_{uv}$ through it
 
-Can impose linear equality and inequality constraints to model real-world roads
-
-You can imagine the set of possible traffic flows as some convex region in space, like $\mathbb R^{3242}$, for a graph with 3242 directed edges
+We add linear equality and inequality constraints to model real-world roads, cutting out some convex *feasible region* of valid traffic flows, $F(S)$
 
 $f_{uv} \geq 0$ cuts out a cone
 
 $f_{ij} = f_{k\ell}$ cuts out a linear subspace
 
-Note: Give some examples verbally, don't spend too much time on it
+Note: Cone is positive quadrant
 
-As said earlier, ... flow in = flow out, at each junction which direction you're allowed to turn, maximum capacity of each road, etc.
+In terms of constraints, we have conservation of mass: flow in = flow out, as well as being able to set up which directions you're allowed to turn, at an intersection. 
 
 ---
 
-# The objective
+### The objective
 
 $$\newcommand{\abs}[1]{\left| #1 \right|}
 \newcommand{\norm}[1]{ \left\Vert #1 \right\Vert }
-\min_{S \in \\{0, 1\\}^{\abs E}} \left( \overbrace{\norm S_1}^\text{# sensors} + \frac{\lambda}{\abs E} \underbrace{\max_{F(S)} \left[ \sum_{(u, v) \in E} \ell_{uv} f_{uv} \right]}_\text{uncertainty} \right)$$
+\min_{S \in \\{0, 1\\}^{\abs E}} \left( \overbrace{\norm S_1}^\text{# sensors} + \lambda \cdot \underbrace{\max_{F(S)} \left[ \sum_{(u, v) \in E} \ell_{uv} f_{uv} \right]}_\text{uncertainty} \right)$$
 
-where $F(S)$ is the convex feasible region of "valid flows", as a function of the sensor placement
+where $F(S)$ is the set of "valid flows" as a function of the sensor placement, $\ell_{uv}$ is the length of the edge/road in metres
 
-Note: The exact form of this expression is unimportant, but:
+Note: This looks like an awful expression, the exact form is unimportant, but:
 
-The minimisation corresponds to player 1 picking the position of the sensors, and the maximisation consists of player 2 sending as much traffic flow as possible. 
+The minimisation corresponds to player 1 picking the position of the sensors, and the maximisation consists of player 2 sending as much traffic flow as possible - where flow is weighted by the edge length: longer edges are more important. 
 
 What does this mean?
 - There's two terms in the objective
@@ -62,25 +52,59 @@ What does this mean?
 - if lambda is zero, the second term disappears - how do you minimise a sum of nonnegative things? set all of them to zero -- i.e. we don't place any sensors at all
 - if lambda is extremely large, increasing the number of sensors is insignificant, compared to any potential traffic flow reduction - so we place almost all sensors (non-redundant ones, that is)
 
-Each of those constraints is encoded in $F(S)$
-
 How do we solve this? Bi-level mixed integer linear program
-
 - Belongs to branch of mathematics called convex analysis, consider a transformed problem with a related solution, duality theory
 - Basically we introduce new variables and fiddle with the constraints a bit
 
-^^^^
-DOWN
+^^^
 
-plot with different lambda values
+<!-- .slide: data-background="#ffffff" data-fullscreen -->
+<object data="lambda-1.7.svg" style="height: 95vh"></object>
+
+Note: Here are some examples of what our model produces for some values of lambda. The blue dots are positions of sensors, while the colour of an edge is its flow, in the scenario where a maximal amount of traffic tries to avoid the sensors - so by assumption, the flow on edges with sensors is zero - which corresponds to blue. 
+
+^^^
+
+<!-- .slide: data-background="#ffffff" data-fullscreen -->
+<object data="lambda-1.1.svg" style="height: 95vh"></object>
+
+^^^
+
+<!-- .slide: data-background="#ffffff" data-fullscreen -->
+<object data="lambda-0.7.svg" style="height: 95vh"></object>
+
+^^^
+
+<!-- .slide: data-background="#ffffff" data-fullscreen -->
+<object data="lambda-0.3.svg" style="height: 95vh"></object>
+
+Note: You can see that as the lambda parameter gets smaller, there are fewer placed - and the edges get warmer - less information is known about the traffic flow on them. However, the model still tries to prioritise "important" edges - longer/more capacity. 
 
 ---
 
-# The code
+### The code
 
-Placeholder
+```julia
+function build_model()
+	model = BilevelModel(() -> Gurobi.Optimizer())
+	@variable(Upper(model), sensors[1:num_edges], Bin)
+	@variable(Lower(model), flows[1:num_edges] >= 0)
 
-<!-- <pre class="stretch"> -->
+	@objective(Lower(model), Max, 
+		dot(flows, flow_weights))
+	@objective(Upper(model), Min, 
+		sensor_sum + λ * dot(flows, flow_weights))
+
+	apply_constraints!(model)
+
+	optimize!(model)
+end
+```
+
+Note: 
+
+^^^
+
 ```julia
 function cs_conserve_flow!(m, G::MetaDiGraph)
     for v ∈ vertices(G)
@@ -98,12 +122,11 @@ function cs_conserve_flow!(m, G::MetaDiGraph)
 	end
 end
 ```
-<!-- </pre> -->
 
-Note: No need to learn some domain-specific modelling language
+Note: Math expressions, symbolic, procedurally manipulate with code. Use these to programmatically declare constraints. 
 
 ---
 
 # The results
 
-See next slide
+
